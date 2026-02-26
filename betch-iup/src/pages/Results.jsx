@@ -1,12 +1,42 @@
+import { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { CheckCircle2, Target, TrendingUp, AlertTriangle, RotateCcw } from 'lucide-react';
+import { api } from '../services/api';
 
 export default function Results() {
     const location = useLocation();
     const navigate = useNavigate();
-    const { answers, company, role } = location.state || {};
+    const { sessionId, company, role } = location.state || {};
 
-    if (!answers) {
+    const [resultsData, setResultsData] = useState(null);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState(null);
+
+    useEffect(() => {
+        const fetchResults = async () => {
+            try {
+                const res = await api.getSessionResults(sessionId);
+                if (res.status === 'success') {
+                    setResultsData(res.data);
+                } else {
+                    setError('Could not fetch results');
+                }
+            } catch (err) {
+                console.error(err);
+                setError('Failed to load interview results.');
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        if (sessionId) {
+            fetchResults();
+        } else {
+            setIsLoading(false);
+        }
+    }, [sessionId]);
+
+    if (!sessionId) {
         return (
             <div className="flex-1 flex items-center justify-center p-6 text-center">
                 <div>
@@ -17,11 +47,24 @@ export default function Results() {
         );
     }
 
-    // Dummy analytics generator based on answers count
-    const answeredCount = Object.keys(answers).filter(k => answers[k].trim().length > 10).length;
-    // Let's assume there were typically 5 questions for fallback or use role.questions
-    const total = role?.questions || 5;
-    const score = Math.round((answeredCount / total) * 100) || 15; // default low score if nothing typed
+    if (isLoading) {
+        return (
+            <div className="flex-1 flex items-center justify-center bg-slate-900 absolute inset-0 z-50">
+                <div className="text-center">
+                    <div className="w-16 h-16 border-4 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin mx-auto mb-6"></div>
+                    <p className="text-slate-300 text-lg animate-pulse">Computing your AI Evaluation...</p>
+                </div>
+            </div>
+        );
+    }
+
+    if (error || !resultsData) {
+        return <div className="text-center p-12 text-white">{error || "Something went wrong"}</div>;
+    }
+
+    const { sessionDetails, answersFeedback } = resultsData;
+    const score = sessionDetails.totalScore;
+    const total = answersFeedback.length;
 
     return (
         <div className="flex-1 flex flex-col p-6 lg:p-12 max-w-4xl mx-auto w-full animate-in fade-in slide-in-from-bottom-5 duration-700 relative z-10">
@@ -51,13 +94,13 @@ export default function Results() {
                             <div className="flex items-center gap-2 text-emerald-400 mb-2 font-medium">
                                 <Target className="w-5 h-5" /> Overall Rating
                             </div>
-                            <div className="text-2xl font-semibold text-white">{score > 70 ? 'Strong Hire' : score > 40 ? 'Borderline' : 'Needs Practice'}</div>
+                            <div className="text-2xl font-semibold text-white">{sessionDetails.confidence}</div>
                         </div>
                         <div className="bg-white/5 p-5 rounded-2xl border border-white/5">
                             <div className="flex items-center gap-2 text-blue-400 mb-2 font-medium">
                                 <CheckCircle2 className="w-5 h-5" /> Questions Attempted
                             </div>
-                            <div className="text-2xl font-semibold text-white">{answeredCount} of {total}</div>
+                            <div className="text-2xl font-semibold text-white">{total} of {total}</div>
                         </div>
                     </div>
                 </div>
@@ -69,8 +112,9 @@ export default function Results() {
                         <TrendingUp className="w-5 h-5 text-emerald-400" /> Key Strengths
                     </h3>
                     <ul className="space-y-3 text-slate-300">
-                        <li className="flex gap-3"><span className="text-emerald-500">•</span> Completeness in answered sections</li>
-                        <li className="flex gap-3"><span className="text-emerald-500">•</span> Time management (finished early)</li>
+                        {answersFeedback.slice(0, 3).map((f, i) => (
+                            <li key={i} className="flex gap-3 text-sm"><span className="text-emerald-500 shrink-0">•</span> {f.feedback?.strength || 'Good logical thinking'}</li>
+                        ))}
                     </ul>
                 </div>
 
@@ -79,8 +123,9 @@ export default function Results() {
                         <AlertTriangle className="w-5 h-5 text-orange-400" /> Areas to Improve
                     </h3>
                     <ul className="space-y-3 text-slate-300">
-                        <li className="flex gap-3"><span className="text-orange-500">•</span> Deeper explanation of core concepts</li>
-                        <li className="flex gap-3"><span className="text-orange-500">•</span> Handling edge cases in theoretical answers</li>
+                        {answersFeedback.slice(0, 3).map((f, i) => (
+                            <li key={i} className="flex gap-3 text-sm"><span className="text-orange-500 shrink-0">•</span> {f.feedback?.weakness || 'Requires deeper articulation'}</li>
+                        ))}
                     </ul>
                 </div>
             </div>

@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { companies, mockQuestions } from '../data/mockData';
+import { companies } from '../data/mockData';
 import { Clock, AlertCircle } from 'lucide-react';
 import QuestionCard from '../components/QuestionCard';
+import { api } from '../services/api';
 
 export default function Interview() {
     const { companyId, roleId } = useParams();
@@ -10,19 +11,62 @@ export default function Interview() {
 
     const company = companies.find(c => c.id === companyId);
     const role = company?.roles.find(r => r.id === roleId);
-    const questions = mockQuestions[roleId] || mockQuestions.frontend; // Fallback
+
+    const [questions, setQuestions] = useState([]);
+    const [sessionId, setSessionId] = useState(null);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState(null);
 
     const [currentIdx, setCurrentIdx] = useState(0);
     const [answers, setAnswers] = useState({});
     const [timeLeft, setTimeLeft] = useState(30 * 60); // 30 mins defaults
 
     useEffect(() => {
+        const initInterview = async () => {
+            try {
+                // Map full role titles to short DB keywords
+                const roleMap = {
+                    'Frontend Developer': 'Frontend',
+                    'Frontend Engineer': 'Frontend',
+                    'Backend Developer': 'Backend',
+                    'Full Stack Developer': 'Full Stack Developer',
+                    'Software Development Engineer': 'Software Engineer',
+                    'Software Engineer': 'Software Engineer',
+                    'Data Analyst': 'Data Analyst',
+                    'SDE I': 'SDE I',
+                    'SDE': 'Software Engineer',
+                };
+
+                const targetRole = roleMap[role?.title] ?? role?.title ?? 'Frontend';
+                const targetCompany = company?.name || 'TCS';
+
+                const res = await api.startInterview(targetCompany, targetRole, 'Medium');
+
+                if (res.status === 'success') {
+                    setQuestions(res.data.questions);
+                    setSessionId(res.data.session._id);
+                    setIsLoading(false);
+                } else {
+                    setError(res.message);
+                    setIsLoading(false);
+                }
+            } catch (err) {
+                console.error(err);
+                setError("Failed to connect to backend server. Make sure it's running on port 5000.");
+                setIsLoading(false);
+            }
+        };
+
+        if (company && role) {
+            initInterview();
+        }
+
         // Parse duration like "45 mins" to seconds
         if (role?.duration) {
             const minutes = parseInt(role.duration.split(' ')[0]) || 30;
             setTimeLeft(minutes * 60);
         }
-    }, [role]);
+    }, [company, role]);
 
     useEffect(() => {
         const timer = setInterval(() => {
@@ -42,18 +86,53 @@ export default function Interview() {
         return <div className="text-center p-12 text-white">Invalid interview session.</div>;
     }
 
+    if (isLoading) {
+        return (
+            <div className="flex-1 flex items-center justify-center bg-slate-900 absolute inset-0 z-50">
+                <div className="text-center">
+                    <div className="w-16 h-16 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin mx-auto mb-6"></div>
+                    <p className="text-slate-300 text-lg animate-pulse">Initializing your {company.name} AI Interview Environment...</p>
+                </div>
+            </div>
+        );
+    }
+
+    if (error || questions.length === 0) {
+        return (
+            <div className="flex-1 flex items-center justify-center bg-slate-900 absolute inset-0 z-50 p-6">
+                <div className="bg-white/10 p-8 rounded-2xl max-w-lg text-center border border-white/20">
+                    <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
+                    <h2 className="text-2xl font-bold text-white mb-2">Setup Failed</h2>
+                    <p className="text-slate-300 mb-6">{error || "No dynamic questions found in database for this role."}</p>
+                    <button onClick={() => navigate('/companies')} className="px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition">Go Back</button>
+                </div>
+            </div>
+        );
+    }
+
     const formatTime = (seconds) => {
         const m = Math.floor(seconds / 60);
         const s = seconds % 60;
         return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
     };
 
-    const handleNext = () => {
-        if (currentIdx < questions.length - 1) {
-            setCurrentIdx(currentIdx + 1);
-        } else {
-            // Finish
-            navigate('/results', { state: { answers, company, role } });
+    const handleNext = async () => {
+        const currentQuestion = questions[currentIdx];
+        const answerText = answers[currentQuestion._id] || '';
+
+        try {
+            // Optional: Show loading state here
+            await api.submitAnswer(sessionId, currentQuestion._id, answerText);
+
+            if (currentIdx < questions.length - 1) {
+                setCurrentIdx(currentIdx + 1);
+            } else {
+                // Finish
+                navigate('/results', { state: { sessionId, company, role } });
+            }
+        } catch (err) {
+            console.error("Failed to submit answer", err);
+            alert("Failed to save answer. Please check your connection.");
         }
     };
 
@@ -102,7 +181,7 @@ export default function Interview() {
                         question={questions[currentIdx]}
                         currentIdx={currentIdx}
                         total={questions.length}
-                        answerText={answers[questions[currentIdx].id] || ''}
+                        answerText={answers[questions[currentIdx]._id] || ''}
                         onAnswerChange={(id, value) => setAnswers({ ...answers, [id]: value })}
                     />
                 </div>

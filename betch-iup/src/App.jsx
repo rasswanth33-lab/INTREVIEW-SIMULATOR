@@ -1,10 +1,17 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import Landing from './pages/Landing';
+import Login from './pages/Login';
 import CompanySelection from './pages/CompanySelection';
 import RoleSelection from './pages/RoleSelection';
 import Interview from './pages/Interview';
 import Results from './pages/Results';
+
+// Protect routes that require a JWT token
+function ProtectedRoute({ children }) {
+  const token = localStorage.getItem('token');
+  return token ? children : <Navigate to="/login" replace />;
+}
 
 function App() {
   return (
@@ -18,10 +25,11 @@ function App() {
 
           <Routes>
             <Route path="/" element={<Landing />} />
-            <Route path="/companies" element={<CompanySelection />} />
-            <Route path="/roles/:companyId" element={<RoleSelection />} />
-            <Route path="/interview/:companyId/:roleId" element={<Interview />} />
-            <Route path="/results" element={<Results />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/companies" element={<ProtectedRoute><CompanySelection /></ProtectedRoute>} />
+            <Route path="/roles/:companyId" element={<ProtectedRoute><RoleSelection /></ProtectedRoute>} />
+            <Route path="/interview/:companyId/:roleId" element={<ProtectedRoute><Interview /></ProtectedRoute>} />
+            <Route path="/results" element={<ProtectedRoute><Results /></ProtectedRoute>} />
           </Routes>
         </main>
       </div>
@@ -30,3 +38,4 @@ function App() {
 }
 
 export default App;
+
